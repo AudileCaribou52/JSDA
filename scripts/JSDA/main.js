@@ -1,10 +1,6 @@
 import { WebSocket, websocket, http, HttpRequest, HttpRequestMethod, HttpHeader } from "@minecraft/server-net";
 import { world, system } from "@minecraft/server";
 
-const BOT_TOKEN = ""
-const CHANNEL_ID = ""
-const APPLICATION_ID = ""
-
 class Buttons {
     constructor(token) {
         this.token = token;
@@ -211,10 +207,22 @@ class TextChannel {
 export class Client {
     constructor(options) {
         this.token = options.token;
+        this.intents = options.intents ?? 0;
+
         this.user = null;
+        this.online = false;
+        this.socket = null;
+
+        this.commands = null;
+        this.buttons = null;
+
+        this.sequence = null;
+        this.heartbeatStarted = false;
+        this.heartbeatTask = null;
     }
 
     async login() {
+        // Authenticate with Discord REST API
         const request = new HttpRequest(
             "https://discord.com/api/v10/users/@me"
         );
@@ -236,152 +244,112 @@ export class Client {
 
         this.user = JSON.parse(response.body);
 
-        return this.user;
+        console.warn("[JSDA] Authenticated as " + this.user.username);
+
+        // Connect to Discord Gateway
+        this.socket = await websocket.connect(
+            "wss://gateway.discord.gg/?v=10&encoding=json"
+        );
+
+        const socket = this.socket;
+
+        return new Promise((resolve, reject) => {
+            socket.afterEvents.message.subscribe((event) => {
+                const packet = JSON.parse(event.message);
+
+                // Update sequence
+                if (packet.s !== null) {
+                    this.sequence = packet.s;
+                }
+
+                // HELLO
+                if (packet.op === 10 && !this.heartbeatStarted) {
+                    this.heartbeatStarted = true;
+
+                    const interval = packet.d.heartbeat_interval;
+                    const ticks = Math.max(1, Math.floor(interval / 50));
+
+                    // Start heartbeat
+                    system.runTimeout(() => {
+                        if (!socket.isOpen) return;
+
+                        socket.send(JSON.stringify({
+                            op: 1,
+                            d: this.sequence
+                        }));
+
+                        this.heartbeatTask = system.runInterval(() => {
+                            if (!socket.isOpen) return;
+
+                            socket.send(JSON.stringify({
+                                op: 1,
+                                d: this.sequence
+                            }));
+                        }, ticks);
+                    }, Math.floor(Math.random() * ticks));
+
+                    // IDENTIFY
+                    socket.send(JSON.stringify({
+                        op: 2,
+                        d: {
+                            token: this.token,
+                            intents: this.intents,
+                            properties: {
+                                os: "linux",
+                                browser: "JSDA",
+                                device: "JSDA"
+                            }
+                        }
+                    }));
+
+                    console.warn("[JSDA] IDENTIFY sent!");
+                }
+
+                // READY
+                if (packet.t === "READY") {
+                    this.user = packet.d.user;
+                    this.online = true;
+
+                    console.warn("[JSDA] Bot is ONLINE!");
+                    console.warn(
+                        "[JSDA] Logged in as " + this.user.username
+                    );
+
+                    resolve(this.user);
+                }
+
+                // HEARTBEAT ACK
+                if (packet.op === 11) {
+                    // Heartbeat acknowledged
+                }
+
+                // INTERACTIONS
+                if (packet.t === "INTERACTION_CREATE") {
+                    const data = packet.d;
+
+                    if (data.type === 2 && this.commands) {
+                        this.commands.handle(data);
+                    }
+
+                    if (data.type === 3 && this.buttons) {
+                        this.buttons.handle(data);
+                    }
+                }
+            });
+
+            // CONNECTION CLOSED
+            socket.afterEvents.close.subscribe(() => {
+                this.online = false;
+                this.socket = null;
+                this.heartbeatStarted = false;
+
+                if (this.heartbeatTask !== null) {
+                    system.clearRun(this.heartbeatTask);
+                    this.heartbeatTask = null;
+                }
+
+                console.warn("[JSDA] Gateway connection closed!");
+            });
+        });
     }
 }
-
-const client = new Client({
-    token: BOT_TOKEN
-});
-client.commands = new Commands(
-    APPLICATION_ID,
-    BOT_TOKEN
-);
-
-client.buttons = new Buttons(BOT_TOKEN);
-
-world.afterEvents.worldLoad.subscribe(async () => {
-    try {
-        await client.login();
-
-        console.warn("JSDA logged in as " + client.user.username);
-
-    } catch (error) {
-        console.warn("JSDA Login Error: " + error);
-    }
-    const socket = await websocket.connect(
-        "wss://gateway.discord.gg/?v=10&encoding=json"
-    );
-
-    let sequence = null;
-    let heartbeatStarted = false;
-
-    socket.afterEvents.message.subscribe((event) => {
-        const packet = JSON.parse(event.message);
-
-        if (packet.s !== null) {
-            sequence = packet.s;
-        }
-
-        // Discord HELLO
-        if (packet.op === 10 && !heartbeatStarted) {
-            heartbeatStarted = true;
-
-            const interval = packet.d.heartbeat_interval;
-            const ticks = Math.floor(interval / 50);
-
-            // Start heartbeat with randomized initial delay
-            system.runTimeout(() => {
-                socket.send(JSON.stringify({
-                    op: 1,
-                    d: sequence
-                }));
-
-                system.runInterval(() => {
-                    if (!socket.isOpen) return;
-
-                    socket.send(JSON.stringify({
-                        op: 1,
-                        d: sequence
-                    }));
-                }, ticks);
-            }, Math.floor(Math.random() * ticks));
-
-            // IDENTIFY
-            socket.send(JSON.stringify({
-                op: 2,
-                d: {
-                    token: BOT_TOKEN,
-                    intents: 0,
-                    properties: {
-                        os: "linux",
-                        browser: "JSDA",
-                        device: "JSDA"
-                    }
-                }
-            }));
-
-            console.warn("[JSDA] IDENTIFY sent!");
-        }
-
-        // Discord READY
-        if (packet.t === "READY") {
-            console.warn("[JSDA] Bot is ONLINE!");
-            console.warn("[JSDA] Logged in as " + packet.d.user.username);
-        }
-
-        if (packet.op === 11) {
-            console.warn("[JSDA] Heartbeat acknowledged!");
-        }
-        if (packet.t === "INTERACTION_CREATE") {
-            const data = packet.d;
-
-            console.warn("[JSDA] Interaction type: " + data.type);
-
-            if (data.type === 2) {
-                client.commands.handle(data);
-            }
-
-            if (data.type === 3) {
-                console.warn("[JSDA] Button clicked: " + data.data.custom_id);
-                client.buttons.handle(data);
-            }
-        }
-    });
-    // await commands.create({
-    //     name: "ping",
-    //     description: "Check bot latency",
-    //     type: 1
-    // });
-    // await commands.bulkOverwrite([]);
-    client.commands.create({
-        name: "ping",
-        description: "Check bot latency",
-
-        async execute(interaction) {
-            await interaction.reply("Pong!");
-        }
-    });
-    client.commands.create({
-        name: "button",
-        description: "Send a button",
-
-        async execute(interaction) {
-            client.buttons.create({
-                id: "hello",
-
-                async execute(buttonInteraction) {
-                    await buttonInteraction.reply("You clicked the button!");
-                }
-            });
-
-            await interaction.reply({
-                content: "Click the button below!",
-                components: [
-                    {
-                        type: 1,
-                        components: [
-                            {
-                                type: 2,
-                                style: 1,
-                                label: "Click Me!",
-                                custom_id: "hello"
-                            }
-                        ]
-                    }
-                ]
-            });
-        }
-    });
-    await client.commands.register();
-});
