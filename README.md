@@ -16,10 +16,10 @@ JSDA allows you to connect Discord bots directly to your Minecraft scripts witho
 * Bot online status and user information
 * Send Discord messages
 * Create and register slash commands
-* Fetch, edit, and delete application commands
 * Bulk overwrite application commands
 * Handle slash command interactions
 * Create and handle Discord buttons
+* Send messages to Discord text channels
 * Register commands and buttons from different scripts
 
 ## Requirements
@@ -39,20 +39,17 @@ Make sure your behavior pack has access to the required Minecraft modules.
 
 ### 1. Import JSDA
 
-```js
-import { Client } from "./JSDA/Client.js";
-import { Commands } from "./JSDA/Commands.js";
-import { Buttons } from "./JSDA/Buttons.js";
-```
+All classes are contained in `main.js`.
 
-Adjust the paths to match your project structure.
+```js
+import { Client, Commands, Buttons, TextChannel } from "./JSDA/main.js";
+```
 
 ### 2. Create the Client
 
 ```js
 const client = new Client({
-    token: BOT_TOKEN,
-    intents: 0
+    token: BOT_TOKEN
 });
 
 client.commands = new Commands(APPLICATION_ID, BOT_TOKEN);
@@ -130,9 +127,6 @@ await client.commands.register();
 | Method            | Description                     |
 | ----------------- | ------------------------------- |
 | `create()`        | Create a command                |
-| `fetchAll()`      | Fetch registered commands       |
-| `edit()`          | Edit a command                  |
-| `delete()`        | Delete a command                |
 | `register()`      | Register created commands       |
 | `bulkOverwrite()` | Replace all registered commands |
 
@@ -173,14 +167,28 @@ await interaction.reply({
 });
 ```
 
+## Text Channels
+
+JSDA supports sending messages to Discord text channels using the `TextChannel` class.
+
+### Create a Text Channel
+
+```js
+const channel = new TextChannel(CHANNEL_ID, BOT_TOKEN);
+```
+
+### Send a Message
+
+```js
+await channel.send("Hello from JSDA!");
+```
+
 ## Example Project
 
 ```js
 import { world } from "@minecraft/server";
 
-import { Client } from "./JSDA/Client.js";
-import { Commands } from "./JSDA/Commands.js";
-import { Buttons } from "./JSDA/Buttons.js";
+import { Client, Commands, Buttons, TextChannel } from "./JSDA/main.js";
 
 const client = new Client({
     token: BOT_TOKEN,
@@ -189,6 +197,8 @@ const client = new Client({
 
 client.commands = new Commands(APPLICATION_ID, BOT_TOKEN);
 client.buttons = new Buttons(BOT_TOKEN);
+
+const channel = new TextChannel(CHANNEL_ID, BOT_TOKEN);
 
 // Register button callback
 client.buttons.create({
@@ -233,6 +243,8 @@ world.afterEvents.worldLoad.subscribe(async () => {
 
         await client.commands.register();
 
+        await channel.send("JSDA is online!");
+
     } catch (error) {
         console.warn("JSDA Login Error: " + error);
     }
@@ -248,4 +260,3 @@ Its API is inspired by Discord libraries such as JDA, with a focus on making bot
 ## License
 
 License information coming soon.
-
