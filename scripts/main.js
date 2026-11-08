@@ -25,39 +25,28 @@ client.buttons.create({
     }
 });
 
+// Register slash command
 client.commands.create({
     name: "hello",
     description: "Say hello",
-    options: [
-        {
-            type: 3,
-            name: "message",
-            description: "Message to say",
-            required: true
-        },
-        {
-            type: 6,
-            name: "user",
-            description: "User to greet",
-            required: false
-        },
-        {
-            type: 5,
-            name: "excited",
-            description: "Make it exciting",
-            required: false
-        }
-    ],
+
     async execute(interaction) {
-        const options = interaction.data.options;
-
-        const message = options.find(o => o.name === "message")?.value;
-        const user = options.find(o => o.name === "user")?.value;
-        const excited = options.find(o => o.name === "excited")?.value;
-
-        await interaction.reply(
-            `${message}${user ? ` <@${user}>` : ""}${excited ? "!!!" : ""}`
-        );
+        await interaction.reply({
+            content: "Hello!",
+            components: [
+                {
+                    type: 1,
+                    components: [
+                        {
+                            type: 2,
+                            style: 1,
+                            label: "Click Me!",
+                            custom_id: "hello"
+                        }
+                    ]
+                }
+            ]
+        });
     }
 });
 
@@ -68,8 +57,7 @@ world.afterEvents.worldLoad.subscribe(async () => {
 
         console.warn("JSDA logged in as " + client.user.username);
 
-        const result = await client.commands.register();
-        console.warn(JSON.stringify(result, null, 2));
+        await client.commands.register();
 
         await channel.send("JSDA is online!");
 
