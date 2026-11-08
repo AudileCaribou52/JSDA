@@ -226,6 +226,7 @@ class Commands {
             commands
         );
     }
+
     async handle(interactionData) {
         const command = this.registered.get(interactionData.data?.name);
 
@@ -255,23 +256,26 @@ class Commands {
             }
         };
 
-        const selected = interactionData.data.options?.[0];
+        const options = interactionData.data.options;
 
-        if (!selected) {
+        if (!options || (options[0]?.type !== 1 && options[0]?.type !== 2)) {
             if (typeof command.execute === "function") {
                 await command.execute(interaction);
             }
             return;
         }
 
+        const selected = options[0];
+
         if (selected.type === 1) {
             const subcommand = command.options.find(
                 option => option.type === 1 && option.name === selected.name
             );
 
-            if (subcommand) {
+            if (subcommand && typeof subcommand.execute === "function") {
                 await subcommand.execute(interaction);
             }
+            return;
         }
 
         if (selected.type === 2) {
@@ -282,12 +286,13 @@ class Commands {
             if (!group) return;
 
             const selectedSub = selected.options?.[0];
+            if (!selectedSub) return;
 
             const subcommand = group.options.find(
-                option => option.name === selectedSub?.name
+                option => option.type === 1 && option.name === selectedSub.name
             );
 
-            if (subcommand) {
+            if (subcommand && typeof subcommand.execute === "function") {
                 await subcommand.execute(interaction);
             }
         }
